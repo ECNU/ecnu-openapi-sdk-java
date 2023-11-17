@@ -1,0 +1,27 @@
+<hibernate-mapping>
+    <!-- name 属性：持久化类的全路径 -->
+    <!-- table 属性：表的名称 -->
+    <class name="com.ecnu.example.entity.Fake" table="fake_table">
+        <!-- 主键 -->
+        <id name="id" column="id" type="int">
+            <!-- 主键生成策略 -->
+            <generator class="assigned"/>
+        </id>
+        <property name="colString1" column="colString1" type="string"/>
+        <property name="colString2" column="colString2" type="string"/>
+        <property name="colString3" column="colString3" type="string"/>
+        <property name="colString4" column="colString4" type="string"/>
+        <property name="colInt1" column="colInt1" type="string"/>
+        <property name="colInt2" column="colInt2" type="string"/>
+        <property name="colInt3" column="colInt3" type="string"/>
+        <property name="colInt4" column="colInt4" type="string"/>
+        <property name="colFloat1" column="colFloat1" type="float"/>
+        <property name="colFloat2" column="colFloat2" type="float"/>
+        <property name="colFloat3" column="colFloat3" type="float"/>
+        <property name="colFloat4" column="colFloat4" type="float"/>
+        <property name="colSqlTime1" column="colSqlTime1" type="date"/>
+        <property name="colSqlTime2" column="colSqlTime2" type="date"/>
+        <property name="colSqlTime3" column="colSqlTime3" type="date"/>
+        <property name="colSqlTime4" column="colSqlTime4" type="date"/>
+    </class>
+</hibernate-mapping>
