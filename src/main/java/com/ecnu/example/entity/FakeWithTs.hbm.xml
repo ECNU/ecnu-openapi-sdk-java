@@ -1,0 +1,16 @@
+<hibernate-mapping>
+    <!-- name 属性：持久化类的全路径 -->
+    <!-- table 属性：表的名称 -->
+    <class name="com.ecnu.example.entity.FakeWithTS" table="fake_with_ts_table">
+        <!-- 主键 -->
+        <id name="id" column="id" type="int">
+            <!-- 主键生成策略 -->
+            <generator class="assigned"/>
+        </id>
+        <property name="created_at" column="createTime" type="java.time.LocalDateTime"/>
+        <property name="updated_at" column="updateTime" type="java.time.LocalDateTime"/>
+        <property name="deleted_mark" column="deletedMark" type="int"/>
+        <property name="userId" column="userId" type="string"/>
+        <property name="name" column="name" type="string"/>
+    </class>
+</hibernate-mapping>
