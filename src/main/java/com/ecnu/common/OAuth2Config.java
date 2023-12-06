@@ -1,12 +1,12 @@
 package com.ecnu.common;
 
-import com.ecnu.constants.Constants;
-import com.google.gson.annotations.SerializedName;
+import com.ecnu.util.Constants;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
-import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -16,25 +16,20 @@ import java.util.List;
  */
 
 @Data
-public class OAuth2Config implements Serializable {
-    @SerializedName("client_id")
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
+public class OAuth2Config {
     private String clientId; // 必须
-    @SerializedName("client_secrete")
     private String clientSecret; // 必须
-    @SerializedName("base_url")
-    private String baseUrl; // 默认 https://api.ecnu.edu.cn
-    @SerializedName("scopes")
-    private List<String> scopes; //默认 ["ECNU-Basic"]
-    @SerializedName("timeout")
-    private Integer timeout;//默认10秒
-    @SerializedName("debug")
-    private Boolean debug;//默认 false, 如果开启 debug，会打印出请求和响应的详细信息，对于数据同步类接口而言可能会非常大
-
-    public OAuth2Config() {
-    }
-
-    public OAuth2Config(String clientId, String clientSecret) {
-        this.clientId = clientId;
-        this.clientSecret = clientSecret;
-    }
+    @Builder.Default
+    private String baseUrl = Constants.DEFAULT_BASE_URL;
+    @Builder.Default
+    private List<String> scopes = new ArrayList<String>() {{
+        add(Constants.DEFAULT_SCOPE);
+    }};
+    @Builder.Default
+    private Integer timeout = Constants.DEFAULT_TIMEOUT;
+    @Builder.Default
+    private Boolean debug = false;
 }

@@ -14,12 +14,12 @@
         <!-- 指定数据库驱动 -->
         <property name="hibernate.connection.driver_class">com.mysql.cj.jdbc.Driver</property>
         <!-- 连接数据库账户名称 -->
-        <property name="hibernate.connection.username">your_user</property>
+        <property name="hibernate.connection.username">username</property>
         <!-- 连接数据库密码 -->
-        <property name="hibernate.connection.password">your_password</property>
+        <property name="hibernate.connection.password">password</property>
         <!-- 连接的绝对路径 -->
         <property name="hibernate.connection.url">
-            jdbc:mysql://host/database
+            jdbc:mysql://localhost:3306/test
         </property>
 
         <!-- 启动hibernate时检查表，如表不存在，则创建；如表结构不一致，则更新表结构 -->

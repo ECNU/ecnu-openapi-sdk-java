@@ -1,9 +1,11 @@
 package com.ecnu.example.entity;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
 import javax.persistence.Id;
 import java.util.Date;
+
 @Data
 public class Fake {
     @Id
@@ -20,9 +22,13 @@ public class Fake {
     public Float colFloat2;
     public Float colFloat3;
     public Float colFloat4;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     public Date colSqlTime1;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     public Date colSqlTime2;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     public Date colSqlTime3;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     public Date colSqlTime4;
 
     public Fake() {
