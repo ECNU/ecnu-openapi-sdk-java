@@ -21,12 +21,14 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.security.oauth2.client.DefaultOAuth2ClientContext;
 import org.springframework.security.oauth2.client.OAuth2RestTemplate;
 import org.springframework.security.oauth2.client.token.grant.client.ClientCredentialsResourceDetails;
-import org.springframework.security.oauth2.common.DefaultOAuth2AccessToken;
 import org.springframework.security.oauth2.common.OAuth2AccessToken;
 
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
 
 
 /**
@@ -42,6 +44,7 @@ public class OAuth2Client {
     private OAuth2RestTemplate template;
     private String baseUrl = "";
     private Boolean debug = false;
+    private Integer retryCount = 0;
 
     private static volatile OAuth2Client client = getClient();
 
@@ -82,39 +85,82 @@ public class OAuth2Client {
         client.setDebug(cf.getDebug());
     }
 
-    private <T> EcnuDTO<EcnuPageDTO<T>> getData(String url, long ts, int page, int size) {
-        Boolean expired = isRenewToken(client);
+    private <T> EcnuDTO<EcnuPageDTO<T>> getData(ApiConfig apiConfig, int page) throws Exception {
+        Boolean expired = isRenewToken();
         if (expired) {
-            renewToken(client);
+            renewToken();
         }
-        url = String.format("%s%s?ts=%s&pageNum=%s&pageSize=%s", client.getBaseUrl(), url, ts, page, size);
-        ParameterizedTypeReference<EcnuDTO<EcnuPageDTO<T>>> responseType =
-                new ParameterizedTypeReference<EcnuDTO<EcnuPageDTO<T>>>() {
-                };
-        ResponseEntity<EcnuDTO<EcnuPageDTO<T>>> response = template.exchange(
-                url, HttpMethod.GET, null, responseType);
+        String queryParams = apiConfig.getParam().entrySet().stream()
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(Collectors.joining("&"));
+        String url = String.format("%s%s?pageNum=%s&pageSize=%s&%s", client.getBaseUrl(), apiConfig.getApiPath(), page, apiConfig.getPageSize(), queryParams);
+        ParameterizedTypeReference<EcnuDTO<EcnuPageDTO<T>>> responseType = new ParameterizedTypeReference<EcnuDTO<EcnuPageDTO<T>>>() {
+        };
+        ResponseEntity<EcnuDTO<EcnuPageDTO<T>>> response = template.exchange(url, HttpMethod.GET, null, responseType);
+        String errorCode = response.getHeaders().getFirst("X-Ca-Error-Code");
+        if (errorCode != null) {
+            if (errorCode.equals(Constants.Invalid_Token_ERROR) && client.getRetryCount() <= 3) {
+                retryAdd(client);
+                return getData(apiConfig, page);
+            } else {
+                throw new Exception(response.getBody().getErrMsg());
+            }
+        } else {
+            if (client.getRetryCount() > 0) {
+                retryReset(client);
+            }
+        }
         return response.getBody();
     }
 
-    public <T> List<T> getAllData(ApiConfig apiConfig) {
+    public <T> List<T> getAllData(ApiConfig apiConfig) throws Exception {
         apiConfig.setDefault();
-        List<T> list = new ArrayList<>();
+        List<T> list;
         int i = 1;
         //通过接口获取
-        long ts = Long.valueOf((Integer) apiConfig.getParam().getOrDefault("ts", 0));
-        EcnuDTO<EcnuPageDTO<T>> result = getData(apiConfig.getApiPath(), ts, i, apiConfig.getPageSize());
+        EcnuDTO<EcnuPageDTO<T>> result = getData(apiConfig, i);
         //判断状态码是否为0
         if (result.getErrCode() == 0) {
             //将查询到的数据存放入集合
-            list.addAll(result.getData().getRows());
+            list = new ArrayList<>(result.getData().getRows());
             //通过while循环去获取每一页的数据,每一页数据100条
             while (i * result.getData().getPageSize() < result.getData().getTotalNum()) {
                 i++;
-                result = getData(apiConfig.getApiPath(), ts, i, apiConfig.getPageSize());
-                if (result.getErrCode() == 0) list.addAll(result.getData().getRows());
+                result = getData(apiConfig, i);
+                if (result.getErrCode() == 0) {
+                    list.addAll(result.getData().getRows());
+                } else {
+                    throw new Exception(result.getErrMsg());
+                }
             }
+        } else {
+            throw new Exception(result.getErrMsg());
         }
         return list;
+    }
+
+    private void retryAdd(OAuth2Client client) {
+        ReadWriteLock lock = new ReentrantReadWriteLock();
+        lock.readLock().lock();
+        try {
+            client.setRetryCount(client.getRetryCount() + 1);
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    private void retryReset(OAuth2Client client) {
+        ReadWriteLock lock = new ReentrantReadWriteLock();
+        lock.readLock().lock();
+        try {
+            client.setRetryCount(0);
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /**
@@ -147,7 +193,7 @@ public class OAuth2Client {
      * @param <T>
      * @return
      */
-    public <T> List<T> syncToModel(ApiConfig apiConfig) {
+    public <T> List<T> syncToModel(ApiConfig apiConfig) throws Exception {
         return getAllData(apiConfig);
     }
 
@@ -170,8 +216,7 @@ public class OAuth2Client {
             apiConfig.setDefault();
             int i = 1;
             //通过接口获取
-            long ts = Long.valueOf((Integer) apiConfig.getParam().getOrDefault("ts", 0));
-            EcnuDTO<EcnuPageDTO<T>> result = getData(apiConfig.getApiPath(), ts, i, apiConfig.getPageSize());
+            EcnuDTO<EcnuPageDTO<T>> result = getData(apiConfig, i);
             //判断状态码是否为0
             if (result.getErrCode() == 0) {
                 //将查询到的数据存放入集合
@@ -179,11 +224,15 @@ public class OAuth2Client {
                 //通过while循环去获取每一页的数据,每一页数据100条
                 while (i * result.getData().getPageSize() < result.getData().getTotalNum()) {
                     i++;
-                    result = getData(apiConfig.getApiPath(), ts, i, apiConfig.getPageSize());
+                    result = getData(apiConfig, i);
                     if (result.getErrCode() == 0) {
                         totalSaved += batchSyncToDB(session, apiConfig.getBatchSize(), result.getData().getRows(), model);
+                    } else {
+                        throw new Exception(result.getErrMsg());
                     }
                 }
+            } else {
+                throw new Exception(result.getErrMsg());
             }
             tx.commit();
         } catch (Exception e) {
@@ -230,11 +279,10 @@ public class OAuth2Client {
     /**
      * 判断当前token是否失效，以及剩余有效时间
      *
-     * @param client
      * @return 失效：返回负数；未失效，返回正数，剩余时间
      */
 
-    private Boolean isRenewToken(OAuth2Client client) {
+    private Boolean isRenewToken() {
         OAuth2AccessToken token = client.getTemplate().getAccessToken();
         if (token == null) return false;
         Date expirationDate = token.getExpiration();
@@ -244,24 +292,13 @@ public class OAuth2Client {
         return remainTs < 0 || (remainTs > 0 && remainTs < Constants.NEAR_EXPIRE_TIME);
     }
 
-    private void renewToken(OAuth2Client client) {
-        OAuth2RestTemplate template = client.getTemplate();
-        OAuth2AccessToken accessToken = template.getAccessToken();
-        ClientCredentialsResourceDetails cf = client.getResource();
-        if (accessToken.isExpired()) {
-            // 已过期，获取新的token
-            ClientCredentialsResourceDetails resourceDetails = new ClientCredentialsResourceDetails();
-            BeanUtils.copyProperties(cf, resourceDetails);
-            resourceDetails.setGrantType("client_credentials");
-            OAuth2RestTemplate template1 = new OAuth2RestTemplate(resourceDetails);
-            OAuth2AccessToken newToken = template1.getAccessToken();
-            template.getOAuth2ClientContext().setAccessToken(newToken);
-        } else {
-            // 未过期
-            Date newExpirationDate = new Date(accessToken.getExpiration().getTime() + Constants.DEFAULT_TOKEN_DURATION);
-            DefaultOAuth2AccessToken newToken = new DefaultOAuth2AccessToken(accessToken);
-            newToken.setExpiration(newExpirationDate);
-            template.getOAuth2ClientContext().setAccessToken(newToken);
-        }
+    private void renewToken() {
+        ClientCredentialsResourceDetails resourceDetails = new ClientCredentialsResourceDetails();
+        BeanUtils.copyProperties(client.getResource(), resourceDetails);
+        resourceDetails.setGrantType("client_credentials");
+        template = new OAuth2RestTemplate(resourceDetails);
+        OAuth2AccessToken newToken = template.getAccessToken();
+        template.getOAuth2ClientContext().setAccessToken(newToken);
     }
+
 }
