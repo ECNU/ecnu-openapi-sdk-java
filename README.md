@@ -13,10 +13,12 @@
 - 数据同步（接口必须支持翻页）
     - 全量同步
         - [x] 同步为 csv 格式
-        - [ ] 同步为 xls/xlsx 格式
+        - [x] 同步为 xlsx 格式
         - [x] 同步到数据库
         - [x] 同步到模型
     - 增量同步（接口必须支持ts增量参数）
+        - [x] 同步为 csv 格式
+        - [x] 同步为 xlsx 格式
         - [x] 同步到数据库
         - [x] 同步到模型
 
@@ -25,11 +27,13 @@
 - hibernate 5.6.11
 - Spring Security OAuth2 2.5.2
 - Gson 2.8.9
+- opencsv 5.6
+- easyexcel 2.2.6
 
 ## 相关资料
 - [oauth2.0](https://oauth.net/2/)
 - [hibernate](https://hibernate.org/)
--
+
 ## 支持的数据库
 理论上只要 hibernate支持的数据库驱动都可以支持，以下是测试的情况
 
@@ -48,9 +52,10 @@
 详见以下示例代码，和示例代码中的相关注释
 
 - [CallAPI](src/main/java/com/ecnu/example/CallAPIExample.java)
-- [SyncToCSV](src%2Fmain%2Fjava%2Fcom%2Fecnu%2Fexample%2FSyncToCSVExample.java)
-- [SyncToModel](src%2Fmain%2Fjava%2Fcom%2Fecnu%2Fexample%2FSyncToModelExample.java)
-- [SyncToDB](src%2Fmain%2Fjava%2Fcom%2Fecnu%2Fexample%2FSyncToDBExample.java)
+- [SyncToCSV](src/main/java/com/ecnu/example/SyncToCSVExample.java)
+- [SyncToXLSX](src/main/java/com/ecnu/example/SyncToXLSXExample.java)
+- [SyncToModel](src/main/java/com/ecnu/example/SyncToModelExample.java)
+- [SyncToDB](src/main/java/com/ecnu/example/SyncToDBExample.java)
 
 
 ## 性能

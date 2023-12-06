@@ -1,8 +1,10 @@
 package com.ecnu.common;
 
-import com.google.gson.annotations.SerializedName;
-import com.ecnu.constants.Constants;
+import com.ecnu.util.Constants;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.util.Map;
 
@@ -13,52 +15,41 @@ import java.util.Map;
  */
 
 @Data
-public class APIConfig {
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class ApiConfig {
     /**
      * api路径，必填
      */
-//    @SerializedName("api_path")
-    private String APIPath;
+    private String apiPath;
     /**
      * 翻页大小，最大10000，默认2000
      */
-//    @SerializedName("page_size")
-    private Integer pageSize; //
+    @Builder.Default
+    private Integer pageSize = 2000;
     /**
      * 批量写入数据的批次大小，默认100
      */
-//    @SerializedName("data_batch")
-    private Integer batchSize;
+    @Builder.Default
+    private Integer batchSize = 100;
     /**
      * 用于批量同步，数据库对应的时间戳字段，默认updated_at
      */
-    private String updatedAtField;
+    @Builder.Default
+    private String updatedAtField = "updated_at";
+
     private Map<String, Object> param;
 
-    public APIConfig() {
-
-    }
-
-    public APIConfig(String APIPath, Integer pageSize, Integer batchSize, String updatedAtField, Map<String, Object> param) {
-        this.APIPath = APIPath;
-        this.pageSize = pageSize;
-        this.batchSize = batchSize;
-        this.updatedAtField = updatedAtField;
-        this.param = param;
-    }
-
     public void setDefault() {
-        if (this.getPageSize() == null || this.getPageSize() == 0) {
+        if (this.getPageSize() == 0) {
             this.setPageSize(2000);
-        } else if (this.getPageSize() > Constants.MAX_PAGE_SIZE) {
+        }
+        if (this.getPageSize() > Constants.MAX_PAGE_SIZE) {
             this.setPageSize(Constants.MAX_PAGE_SIZE);
         }
-        if (this.getBatchSize() == null || this.getBatchSize() == 0) {
+        if (this.getBatchSize() == 0) {
             this.setBatchSize(100);
         }
-        if (this.getUpdatedAtField() == null || this.getUpdatedAtField().equals("")) {
-            this.setUpdatedAtField("updated_at");
-        }
     }
-
 }
