@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -39,8 +40,12 @@ public class ApiConfig {
     @Builder.Default
     private String updatedAtField = "updated_at";
 
-    private Map<String, Object> param;
+    @Builder.Default
+    private Map<String, Object> param = new HashMap<>();
 
+    public void setParam(String key, Object value) {
+        param.put(key, value);
+    }
     public void setDefault() {
         if (this.getPageSize() == 0) {
             this.setPageSize(2000);
