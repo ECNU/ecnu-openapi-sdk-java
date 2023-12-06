@@ -25,6 +25,7 @@ import org.springframework.security.oauth2.common.OAuth2AccessToken;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -85,23 +86,24 @@ public class OAuth2Client {
         client.setDebug(cf.getDebug());
     }
 
-    private <T> EcnuDTO<EcnuPageDTO<T>> getData(ApiConfig apiConfig, int page) throws Exception {
+    private <T> EcnuDTO<EcnuPageDTO<T>> getData(String url) throws Exception {
         Boolean expired = isRenewToken();
         if (expired) {
             renewToken();
         }
-        String queryParams = apiConfig.getParam().entrySet().stream()
-                .map(entry -> entry.getKey() + "=" + entry.getValue())
-                .collect(Collectors.joining("&"));
-        String url = String.format("%s%s?pageNum=%s&pageSize=%s&%s", client.getBaseUrl(), apiConfig.getApiPath(), page, apiConfig.getPageSize(), queryParams);
         ParameterizedTypeReference<EcnuDTO<EcnuPageDTO<T>>> responseType = new ParameterizedTypeReference<EcnuDTO<EcnuPageDTO<T>>>() {
         };
         ResponseEntity<EcnuDTO<EcnuPageDTO<T>>> response = template.exchange(url, HttpMethod.GET, null, responseType);
+        if (debug) {
+            System.out.println(url);
+            System.out.println(response.getStatusCode().value());
+            System.out.println(response.getHeaders().toString());
+        }
         String errorCode = response.getHeaders().getFirst("X-Ca-Error-Code");
         if (errorCode != null) {
             if (errorCode.equals(Constants.Invalid_Token_ERROR) && client.getRetryCount() <= 3) {
                 retryAdd(client);
-                return getData(apiConfig, page);
+                return getData(url);
             } else {
                 throw new Exception(response.getBody().getErrMsg());
             }
@@ -113,7 +115,15 @@ public class OAuth2Client {
         return response.getBody();
     }
 
-    public <T> List<T> getAllData(ApiConfig apiConfig) throws Exception {
+    private <T> EcnuDTO<EcnuPageDTO<T>> getData(ApiConfig apiConfig, int page) throws Exception {
+        String queryParams = apiConfig.getParam().entrySet().stream()
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(Collectors.joining("&"));
+        String url = String.format("%s%s?pageNum=%s&pageSize=%s&%s", client.getBaseUrl(), apiConfig.getApiPath(), page, apiConfig.getPageSize(), queryParams);
+        return getData(url);
+    }
+
+    private <T> List<T> getAllData(ApiConfig apiConfig) throws Exception {
         apiConfig.setDefault();
         List<T> list;
         int i = 1;
@@ -160,6 +170,20 @@ public class OAuth2Client {
             e.printStackTrace();
         } finally {
             lock.readLock().unlock();
+        }
+    }
+
+    public <T> List<T> callAPI(String url, String method, HashMap<String, Object> header, String data) throws Exception {
+        switch (method) {
+            case "GET":
+                EcnuDTO<EcnuPageDTO<T>> result = getData(url);
+                if (result.getErrCode() == 0) {
+                    return result.getData().getRows();
+                } else {
+                    throw new Exception(result.getErrMsg());
+                }
+            default:
+                throw new Exception("this method is not supported");
         }
     }
 
@@ -254,7 +278,8 @@ public class OAuth2Client {
      * @return
      */
 
-    private <T> Integer batchSyncToDB(Session session, Integer batchSize, List<T> modelList, Class model) throws Exception {
+    private <T> Integer batchSyncToDB(Session session, Integer batchSize, List<T> modelList, Class model) throws
+            Exception {
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
         CollectionType javaType = objectMapper.getTypeFactory().constructCollectionType(List.class, model);

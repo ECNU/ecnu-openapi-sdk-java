@@ -26,18 +26,15 @@ public class CallAPIExample {
         OAuth2Config cf = OAuth2Config.builder()
                 .clientId("clientId")
                 .clientSecret("clientSecret")
+                .debug(true)
                 .build();
         OAuth2Client client = OAuth2Client.getClient();
         client.initOAuth2ClientCredentials(cf);
 
-        ApiConfig config = ApiConfig.builder()
-                .apiPath("/api/v1/sync/fakewithts")
-                .pageSize(100)
-                .build();
-        config.setParam("ts", 0);
+        String url = "https://api.ecnu.edu.cn/api/v1/sync/fakewithts?ts=0&pageNum=1&pageSize=1";
 
         // -------test callApi----------
-        List<JSONObject> response = client.getAllData(config);
+        List<JSONObject> response = client.callAPI(url, "GET", null, null);
         if (response != null) {
             System.out.println(response);
         } else {
