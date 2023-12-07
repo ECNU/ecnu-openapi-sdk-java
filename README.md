@@ -49,7 +49,36 @@
 
 ## 示例
 
-详见以下示例代码，和示例代码中的相关注释
+```java
+<dependency>
+    <groupId>io.github.ecnu</groupId>
+    <artifactId>ecnu-openapi-sdk-java</artifactId>
+    <version>2.0.0-RELEASE</version>
+</dependency>
+```
+
+### authorization code
+
+Todo
+
+### client_credentials
+#### 接口调用
+初始化 SDK 后直接调用接口即可，sdk 会自动接管 token 的有效期和续约管理。
+
+```java
+        OAuth2Config cf = OAuth2Config.builder()
+            .clientId(ecnuConfig.getClientId())
+            .clientSecret(ecnuConfig.getClientSecret())
+            .build();
+        OAuth2Client client = OAuth2Client.getClient();
+        client.initOAuth2ClientCredentials(cf);
+
+        String url = "https://api.ecnu.edu.cn/api/v1/sync/fakewithts?ts=0&pageNum=1&pageSize=1";
+        // -------test callApi----------
+        List<JSONObject> response = client.callAPI(url, "GET", null, null);
+```
+
+更多用法详见以下示例代码，和示例代码中的相关注释
 
 - [CallAPI](src/main/java/com/ecnu/example/CallAPIExample.java)
 - [SyncToCSV](src/main/java/com/ecnu/example/SyncToCSVExample.java)
