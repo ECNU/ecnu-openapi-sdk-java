@@ -11,6 +11,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.type.CollectionType;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.Data;
+
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+
 import org.hibernate.Session;
 import org.hibernate.Transaction;
 import org.springframework.beans.BeanUtils;
@@ -20,13 +24,29 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.security.oauth2.client.DefaultOAuth2ClientContext;
 import org.springframework.security.oauth2.client.OAuth2RestTemplate;
+import org.springframework.security.oauth2.client.resource.UserRedirectRequiredException;
+import org.springframework.security.oauth2.client.token.DefaultAccessTokenRequest;
 import org.springframework.security.oauth2.client.token.grant.client.ClientCredentialsResourceDetails;
+import org.springframework.security.oauth2.client.token.grant.code.AuthorizationCodeResourceDetails;
+import org.springframework.security.oauth2.common.AuthenticationScheme;
 import org.springframework.security.oauth2.common.OAuth2AccessToken;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.util.UriComponentsBuilder;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.math.BigInteger;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
@@ -41,11 +61,17 @@ import java.util.stream.Collectors;
 @Data
 public class OAuth2Client {
 
+
     private ClientCredentialsResourceDetails resource;
+    private AuthorizationCodeResourceDetails authCodeResource = new AuthorizationCodeResourceDetails();
     private OAuth2RestTemplate template;
+    private DefaultOAuth2ClientContext context = new DefaultOAuth2ClientContext();
+    private String userInfoUrl;
+    private String redirectUrl;
     private String baseUrl = "";
     private Boolean debug = false;
     private Integer retryCount = 0;
+    private Cache<String, String> stateCache;
 
     private static volatile OAuth2Client client = getClient();
 
@@ -84,6 +110,117 @@ public class OAuth2Client {
         client.setTemplate(template);
         client.setBaseUrl(cf.getBaseUrl());
         client.setDebug(cf.getDebug());
+    }
+
+    public void initOAuth2AuthorizationCode(OAuth2Config cf) {
+        this.userInfoUrl = cf.getUserInfoUrl();
+        authCodeResource.setClientId(cf.getClientId());
+        authCodeResource.setClientSecret(cf.getClientSecret());
+        authCodeResource.setScope(cf.getScopes());
+        authCodeResource.setAccessTokenUri(cf.getAccessTokenUrl());
+        authCodeResource.setUserAuthorizationUri(cf.getUserAuthUrl());
+        this.redirectUrl = cf.getRedirectUrl();
+        authCodeResource.setPreEstablishedRedirectUri(this.redirectUrl);
+        this.template = new OAuth2RestTemplate(authCodeResource, this.context);
+
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(cf.getTimeout() * 1000);
+        requestFactory.setReadTimeout(cf.getTimeout() * 1000);
+        this.template.setRequestFactory(requestFactory);
+
+        client.setTemplate(template);
+        client.setDebug(cf.getDebug());
+
+        stateCache = CacheBuilder.newBuilder()
+                .expireAfterWrite(cf.getExpirationTime(), TimeUnit.MINUTES) // 设置写入后的过期时间
+                .build();
+    }
+
+
+    public String generateRandomState() {
+        SecureRandom random = new SecureRandom();
+        byte[] bytes = new byte[16]; // 生成一个16字节的随机数
+        random.nextBytes(bytes);
+        return new BigInteger(1, bytes).toString(16); // 返回十六进制编码的字符串
+    }
+
+    public String getAuthorizationEndpoint(String state) {
+        if (this.authCodeResource == null) {
+            throw new IllegalStateException("OAuth2Client is not initialized");
+        }
+        stateCache.put(state, "");
+
+        // 构建授权URL
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(this.authCodeResource.getUserAuthorizationUri())
+                .queryParam("response_type", "code")
+                .queryParam("client_id", this.authCodeResource.getClientId())
+                .queryParam("redirect_uri", this.authCodeResource.getPreEstablishedRedirectUri())
+                .queryParam("state", state);  // 添加state参数;
+
+        if (this.authCodeResource.getScope() != null && !this.authCodeResource.getScope().isEmpty()) {
+            builder.queryParam("scope", String.join(" ", this.authCodeResource.getScope()));
+        }
+
+        return builder.toUriString();
+    }
+
+
+
+    public String getInfo(String code, String state) throws IOException {
+        OAuth2AccessToken token = null;
+        try {
+            token = getToken(code, state);
+        } catch (IllegalArgumentException e) {
+            // 这里处理无效状态的情况，例如记录日志或抛出异常
+            System.err.println("Invalid state: " + e.getMessage());
+            throw new IOException("Invalid state provided", e);
+        }
+        return getUserInfo(token.getValue());
+    }
+
+    private OAuth2AccessToken getToken(String code, String state) throws IOException, UserRedirectRequiredException {
+        if (stateCache.getIfPresent(state)==null) {
+            System.err.println("Invalid state");
+        }
+
+        this.context.getAccessTokenRequest().setAuthorizationCode(code);
+        this.context.getAccessTokenRequest().setPreservedState(this.redirectUrl);
+        OAuth2AccessToken accessToken = null;
+        try {
+            accessToken = this.template.getAccessToken();
+        } catch (RestClientException e) {
+            System.err.println("Error while fetching access token: " + e.getMessage());
+        } catch (Exception e) {
+            System.err.println("An error occurred: " + e.getMessage());
+        }
+        return accessToken;
+    }
+
+
+    private String getUserInfo(String token) throws IOException {
+        URL url = new URL(this.userInfoUrl);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestProperty("Authorization", "Bearer " + token);
+
+        int responseCode = conn.getResponseCode();
+        if (responseCode != 200) {
+            throw new IOException("Failed to get user info");
+        }
+
+        ObjectMapper mapper = new ObjectMapper();
+        try (InputStream is = conn.getInputStream()) {
+            return readInputStream(is);
+        }
+    }
+    private String readInputStream(InputStream inputStream) throws IOException {
+        StringBuilder result = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                result.append(line);
+            }
+        }
+        return result.toString();
     }
 
     private <T> EcnuDTO<EcnuPageDTO<T>> getData(String url) throws Exception {

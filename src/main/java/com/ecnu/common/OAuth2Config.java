@@ -32,4 +32,15 @@ public class OAuth2Config {
     private Integer timeout = Constants.DEFAULT_TIMEOUT;
     @Builder.Default
     private Boolean debug = false;
+
+    private String redirectUrl;
+    @Builder.Default
+    private String userInfoUrl = Constants.DEFAULT_USER_INFO_URL;
+    @Builder.Default
+    private String accessTokenUrl = Constants.DEFAULT_ACCESS_TOKEN_URL;
+    @Builder.Default
+    private String userAuthUrl = Constants.DEFAULT_USER_AUTH_URL;
+    @Builder.Default
+    private Integer expirationTime = Constants.EXPIRATION_TIME;
+
 }

@@ -9,6 +9,13 @@ public class Constants {
     public static final Integer DEFAULT_TIMEOUT = 10;
     public static final String Invalid_Token_ERROR = "A401OT";
 
+    public static final String DEFAULT_USER_INFO_URL = "https://api.ecnu.edu.cn/oauth2/userinfo";
+    public static final String DEFAULT_ACCESS_TOKEN_URL = "https://api.ecnu.edu.cn/oauth2/token";
+    public static final String DEFAULT_USER_AUTH_URL = "https://api.ecnu.edu.cn/oauth2/authorize";
+    public static final Integer EXPIRATION_TIME = 10;
+
+
+
     /**
      * api相关
      */
