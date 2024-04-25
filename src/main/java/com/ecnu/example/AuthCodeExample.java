@@ -1,102 +1,104 @@
 package com.ecnu.example;
-
 import com.ecnu.OAuth2Client;
 import com.ecnu.common.OAuth2Config;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
-import com.sun.net.httpserver.HttpServer;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.ModelAndView;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
+@SpringBootApplication(exclude = {SecurityAutoConfiguration.class})
 public class AuthCodeExample {
+    public static void main(String[] args) {
+        SpringApplication.run(AuthCodeExample.class, args);
+    }
 
-    public static void main(String[] args) throws IOException {
+    @Bean
+    public OAuth2Client oAuth2Client() {
         OAuth2Config cf = OAuth2Config.builder()
                 .clientId("client_id")
                 .clientSecret("client_secret")
                 .redirectUrl("http://localhost:8080/user")
                 .debug(true)
                 .build();
-        // 获取单例OAuth2Client实例
         OAuth2Client client = OAuth2Client.getClient();
-        // 使用配置初始化OAuth2Client
         client.initOAuth2AuthorizationCode(cf);
-        // 创建HTTP服务器，监听本地的8080端口
-        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+        return client;
+    }
+}
 
-        // 处理/login路径的请求
-        server.createContext("/login", new HttpHandler() {
-            @Override
-            public void handle(HttpExchange exchange) throws IOException {
-                String state = client.generateRandomState();
-                String authorizationUrl = client.getAuthorizationEndpoint(state);
-                // 重定向到授权URL
-                exchange.getResponseHeaders().set("Location", authorizationUrl);
-                exchange.sendResponseHeaders(302, -1);
-                exchange.close();
-            }
-        });
+@RestController
+class UserController {
 
-        // 处理/user路径的请求
-        server.createContext("/user", new HttpHandler() {
-            @Override
-            public void handle(HttpExchange exchange) throws IOException {
-                URI requestUri = exchange.getRequestURI();
-                Map<String, String> queryParams = queryToMap(requestUri.getQuery());
+    @Autowired
+    private OAuth2Client client;
+    @RequestMapping(value = "/login", method = RequestMethod.GET)
+    public void login(HttpServletResponse response) throws IOException {
+        String state = client.generateRandomState();
+        String authorizationUrl = client.getAuthorizationEndpoint(state);
+        System.out.println(authorizationUrl);
+        response.sendRedirect(authorizationUrl);
+    }
 
-                String code = queryParams.get("code");
-                String state = queryParams.get("state");
-                // 校验code非空
-                if (code == null || code.isEmpty()) {
-                    sendResponse(exchange, "Code not found", 400);
-                    return;
-                }
-                try {
-                    String response = client.getInfo(code, state);
-                    exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
-                    exchange.sendResponseHeaders(200, response.getBytes(StandardCharsets.UTF_8).length);
-                    OutputStream os = exchange.getResponseBody();
-                    os.write(response.getBytes());
-                    os.close();
-                } catch (Exception e) {
-                    // 日志记录异常或进行其他错误处理
-                    System.err.println("Error processing request: " + e.getMessage());
-                    // 发送服务器内部错误响应
-                    sendResponse(exchange, "Internal Server Error", 500);
-                }
+    @RequestMapping(value = "/user", method = RequestMethod.GET)
+    public Map<String, String> userInfo(HttpServletRequest request) {
+        // 从请求中获取userInfo
+        String userInfo = (String) request.getAttribute("userInfo");
+        if (userInfo == null) {
+            // 如果没有userInfo，可以选择处理错误或返回一个默认值
+            return  Collections.singletonMap("error", "No user information available.");
+        }
+        return Collections.singletonMap("message", userInfo);
+    }
+}
 
-            }
-            private Map<String, String> queryToMap(String query) {
-                Map<String, String> result = new HashMap<>();
-                if (query == null) return result;
-                for (String param : query.split("&")) {
-                    String[] entry = param.split("=");
-                    if (entry.length > 1) {
-                        result.put(entry[0], entry[1]);
-                    } else {
-                        result.put(entry[0], "");
-                    }
-                }
-                return result;
-            }
-            private void sendResponse(HttpExchange exchange, String response, int statusCode) throws IOException {
-                exchange.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
-                exchange.sendResponseHeaders(statusCode, response.getBytes().length);
-                OutputStream os = exchange.getResponseBody();
-                os.write(response.getBytes());
-                os.close();
-            }
+@Component
+class OAuthInterceptor implements HandlerInterceptor {
+    @Autowired
+    private OAuth2Client client;
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        String code = request.getParameter("code");
+        String state = request.getParameter("state");
 
-        });
+        String userInfo = client.getInfo(code, state);
+        if (userInfo == null) {
+            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            response.getWriter().write("获取用户信息失败");
+            return false;
+        }
 
-        // 启动服务器
-        server.start();
-        System.out.println("Server started on port 8080");
+        request.setAttribute("userInfo", userInfo);
+        return true;
+    }
+}
+@Configuration
+class WebConfig implements WebMvcConfigurer {
+
+    @Autowired
+    private OAuthInterceptor oAuthInterceptor;
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        // 注册拦截器并设置拦截路径
+        registry.addInterceptor(oAuthInterceptor)
+                .addPathPatterns("/**")
+                .excludePathPatterns("/login");
     }
 }
