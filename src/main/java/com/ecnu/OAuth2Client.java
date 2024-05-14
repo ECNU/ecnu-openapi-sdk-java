@@ -7,26 +7,29 @@ import com.ecnu.common.EcnuPageDTO;
 import com.ecnu.common.OAuth2Config;
 import com.ecnu.util.CSVUtils;
 import com.ecnu.util.Constants;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.type.CollectionType;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.github.scribejava.core.builder.ScopeBuilder;
+import com.github.scribejava.core.builder.ServiceBuilder;
+import com.github.scribejava.core.builder.api.DefaultApi20;
+import com.github.scribejava.core.model.OAuth2AccessToken;
+import com.github.scribejava.core.model.OAuthRequest;
+import com.github.scribejava.core.model.Response;
+import com.github.scribejava.core.model.Verb;
+import com.github.scribejava.core.oauth.OAuth20Service;
 import lombok.Data;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
-import org.springframework.beans.BeanUtils;
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.security.oauth2.client.DefaultOAuth2ClientContext;
-import org.springframework.security.oauth2.client.OAuth2RestTemplate;
-import org.springframework.security.oauth2.client.token.grant.client.ClientCredentialsResourceDetails;
-import org.springframework.security.oauth2.common.OAuth2AccessToken;
 
+import java.io.IOException;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
@@ -41,11 +44,13 @@ import java.util.stream.Collectors;
 @Data
 public class OAuth2Client {
 
-    private ClientCredentialsResourceDetails resource;
-    private OAuth2RestTemplate template;
+    private OAuth20Service service;
+    private OAuth2AccessToken accessToken;
+    private Instant expiryTime;
     private String baseUrl = "";
     private Boolean debug = false;
     private Integer retryCount = 0;
+    private static final ObjectMapper mapper = new ObjectMapper();
 
     private static volatile OAuth2Client client = getClient();
 
@@ -54,6 +59,8 @@ public class OAuth2Client {
             synchronized (OAuth2Client.class) {
                 if (client == null) {
                     client = new OAuth2Client();
+                    mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+                    mapper.registerModule(new JavaTimeModule());
                 }
             }
         }
@@ -68,67 +75,70 @@ public class OAuth2Client {
 
     public void initOAuth2ClientCredentials(OAuth2Config cf) {
         // 创建OAuth2 client
-        ClientCredentialsResourceDetails resource = new ClientCredentialsResourceDetails();
-        resource.setClientId(cf.getClientId());
-        resource.setClientSecret(cf.getClientSecret());
-        resource.setScope(cf.getScopes());
-        resource.setAccessTokenUri(cf.getBaseUrl() + "/oauth2/token");
-        // 创建OAuth2RestTemplate
-        OAuth2RestTemplate template = new OAuth2RestTemplate(resource, new DefaultOAuth2ClientContext());
-        // 设置连接超时和读取超时
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(cf.getTimeout() * 1000);
-        requestFactory.setReadTimeout(cf.getTimeout() * 1000);
-        template.setRequestFactory(requestFactory);
-        client.setResource(resource);
-        client.setTemplate(template);
+        DefaultApi20 api20 = new DefaultApi20() {
+            @Override
+            public String getAccessTokenEndpoint() {
+                return cf.getBaseUrl() + "/oauth2/token";
+            }
+
+            @Override
+            protected String getAuthorizationBaseUrl() {
+                return cf.getBaseUrl();
+            }
+        };
+        OAuth20Service service = new ServiceBuilder(cf.getClientId())
+                .apiSecret(cf.getClientSecret())
+                .defaultScope(new ScopeBuilder().withScopes(cf.getScopes()))
+                .build(api20);
+        client.setService(service);
         client.setBaseUrl(cf.getBaseUrl());
         client.setDebug(cf.getDebug());
     }
 
-    private <T> EcnuDTO<EcnuPageDTO<T>> getData(String url) throws Exception {
+    private <T> EcnuDTO<EcnuPageDTO<T>> getData(String url, Class<T> clazz) throws Exception {
         Boolean expired = isRenewToken();
         if (expired) {
             renewToken();
         }
-        ParameterizedTypeReference<EcnuDTO<EcnuPageDTO<T>>> responseType = new ParameterizedTypeReference<EcnuDTO<EcnuPageDTO<T>>>() {
-        };
-        ResponseEntity<EcnuDTO<EcnuPageDTO<T>>> response = template.exchange(url, HttpMethod.GET, null, responseType);
+
+        OAuthRequest request = new OAuthRequest(Verb.GET, url);
+        service.signRequest(accessToken, request);
+        Response response = service.execute(request);
         if (debug) {
             System.out.println(url);
-            System.out.println(response.getStatusCode().value());
+            System.out.println(response.getCode());
             System.out.println(response.getHeaders().toString());
         }
-        String errorCode = response.getHeaders().getFirst("X-Ca-Error-Code");
+        String errorCode = response.getHeaders().get("X-Ca-Error-Code");
         if (errorCode != null) {
             if (errorCode.equals(Constants.Invalid_Token_ERROR) && client.getRetryCount() <= 3) {
                 retryAdd(client);
-                return getData(url);
+                return getData(url, clazz);
             } else {
-                throw new Exception(response.getBody().getErrMsg());
+                throw new Exception(response.getBody());
             }
         } else {
             if (client.getRetryCount() > 0) {
                 retryReset(client);
             }
         }
-        return response.getBody();
+        return mapper.readValue(response.getBody(), mapper.getTypeFactory().constructParametricType(EcnuDTO.class, mapper.getTypeFactory().constructParametricType(EcnuPageDTO.class, clazz)));
     }
 
-    private <T> EcnuDTO<EcnuPageDTO<T>> getData(ApiConfig apiConfig, int page) throws Exception {
+    private <T> EcnuDTO<EcnuPageDTO<T>> getData(ApiConfig apiConfig, int page, Class<T> clazz) throws Exception {
         String queryParams = apiConfig.getParam().entrySet().stream()
                 .map(entry -> entry.getKey() + "=" + entry.getValue())
                 .collect(Collectors.joining("&"));
         String url = String.format("%s%s?pageNum=%s&pageSize=%s&%s", client.getBaseUrl(), apiConfig.getApiPath(), page, apiConfig.getPageSize(), queryParams);
-        return getData(url);
+        return getData(url, clazz);
     }
 
-    private <T> List<T> getAllData(ApiConfig apiConfig) throws Exception {
+    private <T> List<T> getAllData(ApiConfig apiConfig, Class<T> clazz) throws Exception {
         apiConfig.setDefault();
         List<T> list;
         int i = 1;
         //通过接口获取
-        EcnuDTO<EcnuPageDTO<T>> result = getData(apiConfig, i);
+        EcnuDTO<EcnuPageDTO<T>> result = getData(apiConfig, i, clazz);
         //判断状态码是否为0
         if (result.getErrCode() == 0) {
             //将查询到的数据存放入集合
@@ -136,7 +146,7 @@ public class OAuth2Client {
             //通过while循环去获取每一页的数据,每一页数据100条
             while (i * result.getData().getPageSize() < result.getData().getTotalNum()) {
                 i++;
-                result = getData(apiConfig, i);
+                result = getData(apiConfig, i, clazz);
                 if (result.getErrCode() == 0) {
                     list.addAll(result.getData().getRows());
                 } else {
@@ -173,10 +183,10 @@ public class OAuth2Client {
         }
     }
 
-    public <T> List<T> callAPI(String url, String method, HashMap<String, Object> header, String data) throws Exception {
+    public <T> List<T> callAPI(String url, String method, HashMap<String, Object> header, String data, Class<T> clazz) throws Exception {
         switch (method) {
             case "GET":
-                EcnuDTO<EcnuPageDTO<T>> result = getData(url);
+                EcnuDTO<EcnuPageDTO<T>> result = getData(url, clazz);
                 if (result.getErrCode() == 0) {
                     return result.getData().getRows();
                 } else {
@@ -194,7 +204,7 @@ public class OAuth2Client {
      * @throws Exception
      */
     public void syncToCSV(ApiConfig apiConfig, String csvFileName) throws Exception {
-        List<JSONObject> allRows = getAllData(apiConfig);
+        List<JSONObject> allRows = getAllData(apiConfig, JSONObject.class);
         try {
             CSVUtils.writeJSONToCSV(allRows, csvFileName);
         } catch (Exception e) {
@@ -203,7 +213,7 @@ public class OAuth2Client {
     }
 
     public void syncToXLSX(ApiConfig apiConfig, String xlsxFileName) throws Exception {
-        List<JSONObject> allRows = getAllData(apiConfig);
+        List<JSONObject> allRows = getAllData(apiConfig, JSONObject.class);
         try {
             CSVUtils.writeJSONToXLSX(allRows, xlsxFileName);
         } catch (Exception e) {
@@ -217,8 +227,8 @@ public class OAuth2Client {
      * @param <T>
      * @return
      */
-    public <T> List<T> syncToModel(ApiConfig apiConfig) throws Exception {
-        return getAllData(apiConfig);
+    public <T> List<T> syncToModel(ApiConfig apiConfig, Class<T> clazz) throws Exception {
+        return getAllData(apiConfig, clazz);
     }
 
     /**
@@ -229,7 +239,7 @@ public class OAuth2Client {
      * @throws Exception
      */
 
-    public <T> Integer syncToDB(ApiConfig apiConfig, Session session, Class model) throws Exception {
+    public <T> Integer syncToDB(ApiConfig apiConfig, Session session, Class<T> clazz) throws Exception {
         Transaction tx = session.getTransaction();
         Integer totalSaved = 0;
         try {
@@ -240,17 +250,17 @@ public class OAuth2Client {
             apiConfig.setDefault();
             int i = 1;
             //通过接口获取
-            EcnuDTO<EcnuPageDTO<T>> result = getData(apiConfig, i);
+            EcnuDTO<EcnuPageDTO<T>> result = getData(apiConfig, i, clazz);
             //判断状态码是否为0
             if (result.getErrCode() == 0) {
                 //将查询到的数据存放入集合
-                totalSaved += batchSyncToDB(session, apiConfig.getBatchSize(), result.getData().getRows(), model);
+                totalSaved += batchSyncToDB(session, apiConfig.getBatchSize(), result.getData().getRows(), clazz);
                 //通过while循环去获取每一页的数据,每一页数据100条
                 while (i * result.getData().getPageSize() < result.getData().getTotalNum()) {
                     i++;
-                    result = getData(apiConfig, i);
+                    result = getData(apiConfig, i, clazz);
                     if (result.getErrCode() == 0) {
-                        totalSaved += batchSyncToDB(session, apiConfig.getBatchSize(), result.getData().getRows(), model);
+                        totalSaved += batchSyncToDB(session, apiConfig.getBatchSize(), result.getData().getRows(), clazz);
                     } else {
                         throw new Exception(result.getErrMsg());
                     }
@@ -308,22 +318,16 @@ public class OAuth2Client {
      */
 
     private Boolean isRenewToken() {
-        OAuth2AccessToken token = client.getTemplate().getAccessToken();
-        if (token == null) return false;
-        Date expirationDate = token.getExpiration();
-        long currenTs = System.currentTimeMillis();
-        long expirationTs = expirationDate.getTime();
-        long remainTs = expirationTs - currenTs;
-        return remainTs < 0 || (remainTs > 0 && remainTs < Constants.NEAR_EXPIRE_TIME);
+        if (expiryTime == null) {
+            return true;
+        }
+        return Instant.now().isAfter(expiryTime);
     }
 
-    private void renewToken() {
-        ClientCredentialsResourceDetails resourceDetails = new ClientCredentialsResourceDetails();
-        BeanUtils.copyProperties(client.getResource(), resourceDetails);
-        resourceDetails.setGrantType("client_credentials");
-        template = new OAuth2RestTemplate(resourceDetails);
-        OAuth2AccessToken newToken = template.getAccessToken();
-        template.getOAuth2ClientContext().setAccessToken(newToken);
+    private void renewToken() throws IOException, ExecutionException, InterruptedException {
+        OAuth2AccessToken token = service.getAccessTokenClientCredentialsGrant();
+        expiryTime = Instant.now().plus(token.getExpiresIn(), ChronoUnit.SECONDS);
+        accessToken = token;
     }
 
 }

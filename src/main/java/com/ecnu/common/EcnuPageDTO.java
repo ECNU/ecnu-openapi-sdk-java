@@ -16,5 +16,6 @@ import java.util.List;
 public class EcnuPageDTO<T> {
     private int totalNum;
     private int pageSize;
+    private int pageNum;
     private List<T> rows;
 }
