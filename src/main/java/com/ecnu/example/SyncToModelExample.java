@@ -3,6 +3,7 @@ package com.ecnu.example;
 import com.ecnu.OAuth2Client;
 import com.ecnu.common.ApiConfig;
 import com.ecnu.common.OAuth2Config;
+import com.ecnu.example.entity.Fake;
 import com.ecnu.example.entity.FakeWithTS;
 
 import java.util.List;
@@ -35,7 +36,7 @@ public class SyncToModelExample {
                 .pageSize(100)
                 .build();
         config.setParam("ts", 0);
-        List<FakeWithTS> fakeRows = client.syncToModel(config);
+        List<Fake> fakeRows = client.syncToModel(config, Fake.class);
         // 使用同步后的model进行后续的操作
         System.out.println("Model: 全量同步" + fakeRows.size() + "条数据");
 
@@ -45,7 +46,7 @@ public class SyncToModelExample {
                 .pageSize(100)
                 .build();
         config.setParam("ts", 1672675200);
-        fakeRows = client.syncToModel(config);
-        System.out.println("Model: 增量同步" + fakeRows.size() + "条数据");
+        List<FakeWithTS> fakeWithTS = client.syncToModel(config, FakeWithTS.class);
+        System.out.println("Model: 增量同步" + fakeWithTS.size() + "条数据");
     }
 }

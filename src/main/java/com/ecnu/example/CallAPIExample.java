@@ -34,7 +34,7 @@ public class CallAPIExample {
         String url = "https://api.ecnu.edu.cn/api/v1/sync/fakewithts?ts=0&pageNum=1&pageSize=1";
 
         // -------test callApi----------
-        List<JSONObject> response = client.callAPI(url, "GET", null, null);
+        List<JSONObject> response = client.callAPI(url, "GET", null, null, JSONObject.class);
         if (response != null) {
             System.out.println(response);
         } else {

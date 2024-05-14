@@ -27,7 +27,7 @@ public class SyncToXLSXExample {
         client.initOAuth2ClientCredentials(cf);
 
         ApiConfig config = ApiConfig.builder()
-                .apiPath("/api/v1/synv/fake")
+                .apiPath("/api/v1/sync/fake")
                 .pageSize(100)
                 .build();
         config.setParam("ts", 0);
