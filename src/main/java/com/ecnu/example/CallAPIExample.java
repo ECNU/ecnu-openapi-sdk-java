@@ -2,10 +2,8 @@ package com.ecnu.example;
 
 import com.alibaba.fastjson.JSONObject;
 import com.ecnu.OAuth2Client;
-import com.ecnu.common.ApiConfig;
 import com.ecnu.common.OAuth2Config;
 
-import java.util.HashMap;
 import java.util.List;
 
 /**

@@ -27,7 +27,6 @@
 - hibernate 5.6.11
 - scribejava-apis 8.3.3
 - jackson 2.13.0
-- Gson 2.8.9
 - opencsv 5.6
 - easyexcel 2.2.6
 
@@ -54,7 +53,7 @@
 <dependency>
     <groupId>io.github.ecnu</groupId>
     <artifactId>ecnu-openapi-sdk-java</artifactId>
-    <version>2.1.0-RELEASE</version>
+    <version>2.2.0-RELEASE</version>
 </dependency>
 ```
 
