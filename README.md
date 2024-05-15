@@ -67,16 +67,14 @@ Todo
 初始化 SDK 后直接调用接口即可，sdk 会自动接管 token 的有效期和续约管理。
 
 ```java
-        import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.JSONObject;
 
 OAuth2Config cf = OAuth2Config.builder()
         .clientId(ecnuConfig.getClientId())
         .clientSecret(ecnuConfig.getClientSecret())
         .build();
 OAuth2Client client = OAuth2Client.getClient();
-        client.
-
-initOAuth2ClientCredentials(cf);
+client.initOAuth2ClientCredentials(cf);
 
 String url = "https://api.ecnu.edu.cn/api/v1/sync/fakewithts?ts=0&pageNum=1&pageSize=1";
 // -------test callApi----------
