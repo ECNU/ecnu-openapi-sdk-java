@@ -1,12 +1,9 @@
 package com.ecnu.example.entity;
+
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.google.gson.annotations.SerializedName;
 import lombok.Data;
 
 import javax.persistence.Id;
-import java.sql.Date;
-import java.sql.Time;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data

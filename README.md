@@ -27,7 +27,6 @@
 - hibernate 5.6.11
 - scribejava-apis 8.3.3
 - jackson 2.13.0
-- Gson 2.8.9
 - opencsv 5.6
 - easyexcel 2.2.6
 
@@ -54,7 +53,7 @@
 <dependency>
     <groupId>io.github.ecnu</groupId>
     <artifactId>ecnu-openapi-sdk-java</artifactId>
-    <version>2.1.0-RELEASE</version>
+    <version>2.2.0-RELEASE</version>
 </dependency>
 ```
 
@@ -67,16 +66,14 @@ Todo
 初始化 SDK 后直接调用接口即可，sdk 会自动接管 token 的有效期和续约管理。
 
 ```java
-        import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.JSONObject;
 
 OAuth2Config cf = OAuth2Config.builder()
         .clientId(ecnuConfig.getClientId())
         .clientSecret(ecnuConfig.getClientSecret())
         .build();
 OAuth2Client client = OAuth2Client.getClient();
-        client.
-
-initOAuth2ClientCredentials(cf);
+client.initOAuth2ClientCredentials(cf);
 
 String url = "https://api.ecnu.edu.cn/api/v1/sync/fakewithts?ts=0&pageNum=1&pageSize=1";
 // -------test callApi----------
